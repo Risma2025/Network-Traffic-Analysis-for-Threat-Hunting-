@@ -1,4 +1,4 @@
-# Network-Traffic-Analysis-for-Threat-Hunting-on-OpenStack-Cloud-Environment
+# Network-Traffic-Analysis-for-Threat-Hunting-&-Incindent-Response-on-OpenStack-Cloud-Environment
 
 ## Network Traffic Analysis: OpenStack Cloud Breach (Vantage Sherlock, HTB)
 
@@ -11,11 +11,23 @@ This project is a detailed forensic investigation of a compromised OpenStack clo
 
 ## 🛡️ Executive Summary
 * **Target:** OpenStack Infrastructure-as-a-Service (IaaS).
-* **Attack Vector:** Subdomain fuzzing followed by Credential Stuffing/Brute Force.
-* **Impact:** Exfiltration of `user-details.csv` containing 28 PII records.
+* **Attack Vector:** Subdomain fuzzing followed by Credential Brute Force.
+* **Impact:** Exfiltration of `user-details.csv` (28 records) and `employee-details.csv` (50 records).
 * **Persistence:** Unauthorized creation of a new administrative user `jellibean`.
 
 ---
+### 📅 Forensic Timeline (July 1, 2025)
+
+| Time (UTC) | Phase | Event | Source/Artifact |
+| :--- | :--- | :--- | :--- |
+| **09:38:00** | Reconnaissance | Automated fuzzing of `vantage.tech` | `ffuf/2.1.0` |
+| **09:40:07** | Initial Access | Successful login to Horizon Dashboard | `admin` account |
+| **09:40:29** | Harvesting | Download of `admin-openrc.sh` | API Access Tab |
+| **09:41:44** | Discovery | Enumeration of Swift Object Storage | `openstacksdk` |
+| **09:45:23** | Exfiltration | Stole `user-details.csv` (28 PII records) | GET /v1/AUTH_.../ |
+| **09:45:47** | Exfiltration | Stole `employee-details.csv` (50 records) | GET /v1/AUTH_.../ |
+| **09:48:02** | Persistence | Created rogue user `jellibean` | POST /v3/users |
+| **09:49:15** | Persistence | Granted `admin` role to `jellibean` | PUT /v3/roles/ |
 
 ## 🕵️ Technical Investigation & Kill Chain Mapping
 
@@ -25,23 +37,24 @@ The attacker used **ffuf v2.1.0** to perform directory and subdomain enumeration
 * **Artifact:** HTTP GET requests with the User-Agent `Fuzz Faster U Fool v2.1.0-dev`.
 
 ### 2. Exploitation
-The attacker targeted the Horizon login portal.
-* **Action:** Successfully authenticated using admin credentials at **09:40:07 UTC**.
+The attacker targeted the Horizon login portal and successfully authenticated using admin credentials at **09:40:07 UTC**.
 
 ### 3. Installation & Credential Harvesting
 Once inside the dashboard, the attacker navigated to **Project > API Access**.
 * **Artifact:** Downloaded `admin-openrc.sh`.
-* **Impact:** This file contained the OS_PROJECT_ID and credentials needed to interact directly with the OpenStack API.
+* **Impact:** This file contained the `OS_AUTH_URL` and credentials required to bypass the Horizon GUI. The attacker transitioned to using the **OpenStack SDK/CLI** for programmatic environment traversal.
 
 ### 4. Actions on Objectives (Exfiltration)
-The attacker used the stolen `X-Auth-Token` to interact with the **Swift Object Storage** API.
+The attacker systematically enumerated and drained Swift object storage containers using a stolen `X-Auth-Token`.
 * **Target Containers:** `dev-files`, `employee-data`, and `user-data`.
-* **Exfiltration:** Downloaded `user-details.csv` at **09:45:23 UTC**.
+* **Exfiltration (09:45:23 UTC):** Downloaded `user-details.csv` (28 PII records).
+* **Exfiltration (09:45:47 UTC):** Downloaded `employee-details.csv` (50 internal staff records).
+* **Tooling:** Traffic analysis shows the `User-Agent: openstacksdk/4.6.0`, indicating automated or scripted exfiltration.
 
 ### 5. Persistence
-To maintain long-term access, the attacker issued a `POST` request to the `/identity/v3/users` endpoint
-* **Account Created:** `jellibean`.
-* **Password:** `P@$$word`.
+To ensure long-term access, the attacker performed a two-step persistence maneuver:
+* **Account Creation:** Issued a `POST` request to `/v3/users` to create the user `jellibean` (Password: `P@$$word`).
+* **Privilege Escalation:** Assigned the **"admin" role** to the `jellibean` account, granting full control over the cloud environment even if original credentials are reset.
 
 ---
 
@@ -49,22 +62,25 @@ To maintain long-term access, the attacker issued a `POST` request to the `/iden
 | Type | Value | Description |
 | :--- | :--- | :--- |
 | **IP Address** | `134.209.71.220` | Attacker Source IP |
-| **User-Agent** | `ffuf/2.1.0` | Discovery Tooling |
-| **Filename** | `user-details.csv` | Exfiltrated Sensitive Data |
-| **Persistence** | `jellibean` | Rogue Admin Account |
+| **User-Agent** | `ffuf/2.1.0` | Initial Discovery Tooling |
+| **User-Agent** | `openstacksdk/4.6.0` | API Interaction & Exfiltration Tool |
+| **Filename** | `user-details.csv` | Customer PII Leak |
+| **Filename** | `employee-details.csv` | Internal Corporate Intelligence Leak |
+| **Persistence** | `jellibean` | Rogue Administrative Account |
 
 ---
 
 ## 💡 Recommendations & Remediation
 * **Identity:** Implement Multi-Factor Authentication (MFA) for the Horizon dashboard and API access.
 * **Secret Management:** Rotate all API credentials and move away from plaintext `.sh` configuration files to a secure vault system.
-* **Monitoring:** Enable real-time alerts for any `POST` requests to the Keystone API involving user creation.
+* **Monitoring:** Enable real-time alerts for any `POST` requests to the Keystone API involving user creation or role assignment.
 * **Network:** Restrict OpenStack API endpoints to internal IP ranges or VPN access only.
 
 ---
 
 ## 🛠️ Tools Used
 * **Wireshark:** Network traffic analysis and HTTP stream carving.
+* **OpenStack SDK:** Analysis of API interaction patterns.
 
 ---
 *This investigation was completed as part of the **Vantage Sherlock** on Hack The Box.*
